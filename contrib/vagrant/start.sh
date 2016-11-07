@@ -4,6 +4,8 @@ dir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 #If you change this IPv4 you'll have to change the following IPv6 base address as well
 export 'NODE_IP_BASE'="192.168.33."
 export 'FIRST_IP_SUFFIX'="11"
+export 'VM_MEMORY'=3072
+export 'VM_CPUS'=2
 ipv6_base_addr="F00D::C0A8:210B"
 
 # FIXME: Always enable IPv4 for now until it can be enabled at runtime
@@ -18,6 +20,11 @@ fi
 
 if [ -n "${K8S}" ]; then
     export 'K8STAG'="-k8s"
+    export 'VM_MEMORY'=5120
+    export 'VM_CPUS'=8
+    echo "Warning: In K8S mode, the VM memory and number of CPUs had to be"
+    echo "increased to ${VM_MEMORY} and ${VM_CPUS} respectively."
+    sleep 2s
 fi
 
 if [ -z "${VAGRANT_DEFAULT_PROVIDER}" ]; then
@@ -89,7 +96,11 @@ function write_footer() {
     fi
 
     if [ -n "${K8S}" ]; then
-        k8s_options="--lb -k http://[f00d::c0a8:210b:0:ffff]:8080 "
+        if [ -n "${IPV4}" ] && [ "${IPV4}" -ne "0" ]; then
+            k8s_options="-k http://10.1.0.1:8080 "
+        else
+            k8s_options="-k http://[f00d::c0a8:210b:0:ffff]:8080 "
+        fi
     fi
 
     if [ "$LB" = 1 ] && [ "$index" = 1 ]; then

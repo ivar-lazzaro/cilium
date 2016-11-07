@@ -24,8 +24,8 @@ import (
 	"github.com/cilium/cilium/common/types"
 )
 
-func (d *Daemon) updateServiceL4IDRef(svcl4ID types.ServiceL4ID) error {
-	key := path.Join(common.ServiceIDKeyPath, strconv.FormatUint(uint64(svcl4ID.ServiceID), 10))
+func (d *Daemon) updateServiceL4IDRef(serviceID uint16, svcl4ID types.ServiceL4ID) error {
+	key := path.Join(common.ServiceIDKeyPath, strconv.FormatUint(uint64(serviceID), 10))
 	return d.kvClient.SetValue(key, svcl4ID)
 }
 
@@ -65,14 +65,17 @@ func (d *Daemon) PutServiceL4(svcl4 types.ServiceL4) (*types.ServiceL4ID, error)
 	}
 
 	sl4KV := types.ServiceL4ID{}
-	if rmsg == nil {
+	if rmsg != nil {
+		if err := json.Unmarshal(rmsg, &sl4KV); err != nil {
+			return nil, err
+		}
+	}
+	if sl4KV.ServiceID == 0 {
 		sl4KV.ServiceL4 = svcl4
 		if err := d.gasNewServiceL4ID(&sl4KV); err != nil {
 			return nil, err
 		}
 		err = d.kvClient.SetValue(svcPath, sl4KV)
-	} else {
-		err = json.Unmarshal(rmsg, &sl4KV)
 	}
 
 	return &sl4KV, err
@@ -88,8 +91,10 @@ func (d *Daemon) getServiceL4ID(keyPath string) (*types.ServiceL4ID, error) {
 	}
 
 	var svcl4ID types.ServiceL4ID
-	err = json.Unmarshal(rmsg, &svcl4ID)
-	return &svcl4ID, err
+	if err := json.Unmarshal(rmsg, &svcl4ID); err != nil || svcl4ID.ServiceID == 0 {
+		return nil, err
+	}
+	return &svcl4ID, nil
 }
 
 // GetServiceL4ID returns the ServiceL4ID that belongs to the given id.
@@ -134,7 +139,28 @@ func (d *Daemon) DeleteServiceL4IDBySHA256(sha256Sum string) error {
 	}
 	defer lockKey.Unlock()
 
-	return d.kvClient.SetValue(svcPath, types.ServiceL4ID{ServiceID: 0})
+	// After lock complete, get label's path
+	rmsg, err := d.kvClient.GetValue(svcPath)
+	if err != nil {
+		return err
+	}
+	if rmsg == nil {
+		return nil
+	}
+
+	var svcL4ID types.ServiceL4ID
+	if err := json.Unmarshal(rmsg, &svcL4ID); err != nil {
+		return err
+	}
+	oldSvcID := svcL4ID.ServiceID
+	svcL4ID.ServiceID = 0
+
+	// update the value in the kvstore
+	if err := d.updateServiceL4IDRef(uint16(oldSvcID), svcL4ID); err != nil {
+		return err
+	}
+
+	return d.kvClient.SetValue(svcPath, svcL4ID)
 }
 
 // GetMaxServiceID returns the maximum possible free UUID stored in the kvstore.

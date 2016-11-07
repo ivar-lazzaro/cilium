@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/cilium/cilium/common"
@@ -30,8 +31,8 @@ import (
 
 	dTypes "github.com/docker/engine-api/types"
 	dTypesEvents "github.com/docker/engine-api/types/events"
-	k8sAPI "k8s.io/kubernetes/pkg/api"
-	k8sDockerLbls "k8s.io/kubernetes/pkg/kubelet/types"
+	ctx "golang.org/x/net/context"
+	k8sDockerLbls "k8s.io/client-go/1.5/pkg/kubelet/types"
 )
 
 const (
@@ -44,7 +45,7 @@ const (
 // containers started or dead.
 func (d *Daemon) EnableDockerEventListener() error {
 	eo := dTypes.EventsOptions{Since: strconv.FormatInt(time.Now().Unix(), 10)}
-	r, err := d.dockerClient.Events(eo)
+	r, err := d.dockerClient.Events(ctx.Background(), eo)
 	if err != nil {
 		return err
 	}
@@ -57,18 +58,24 @@ func (d *Daemon) EnableDockerEventListener() error {
 }
 
 func (d *Daemon) EnableDockerSync(once bool) {
+	var wg sync.WaitGroup
 	for {
-		cList, err := d.dockerClient.ContainerList(dTypes.ContainerListOptions{All: false})
+		cList, err := d.dockerClient.ContainerList(ctx.Background(), dTypes.ContainerListOptions{All: false})
 		if err != nil {
 			log.Errorf("Failed to retrieve the container list %s", err)
 		}
 		for _, cont := range cList {
-			go d.createContainer(cont.ID)
+			wg.Add(1)
+			go func(wg *sync.WaitGroup) {
+				d.createContainer(cont.ID)
+				wg.Done()
+			}(&wg)
 		}
 
 		if once {
 			return
 		}
+		wg.Wait()
 		time.Sleep(syncRateDocker)
 	}
 }
@@ -125,9 +132,10 @@ func (d *Daemon) fetchK8sLabels(dockerLbls map[string]string) (map[string]string
 	if podName == "" {
 		return nil, nil
 	}
-	result := &k8sAPI.Pod{}
 	log.Debugf("Connecting to kubernetes to retrieve labels for pod %s ns %s", podName, ns)
-	if err := d.k8sClient.Get().Namespace(ns).Resource("pods").Name(podName).Do().Into(result); err != nil {
+
+	result, err := d.k8sClient.Pods(ns).Get(podName)
+	if err != nil {
 		return nil, err
 	}
 	k8sLabels := result.GetLabels()
@@ -171,7 +179,7 @@ func (d *Daemon) createContainer(dockerID string) {
 }
 
 func (d *Daemon) updateProbeLabels(dockerID string) (bool, *types.Container, error) {
-	dockerCont, err := d.dockerClient.ContainerInspect(dockerID)
+	dockerCont, err := d.dockerClient.ContainerInspect(ctx.Background(), dockerID)
 	if err != nil {
 		return false, nil, fmt.Errorf("Error while inspecting container '%s': %s", dockerID, err)
 	}
@@ -187,7 +195,7 @@ func (d *Daemon) updateProbeLabels(dockerID string) (bool, *types.Container, err
 }
 
 func (d *Daemon) updateUserLabels(dockerID string, labels types.Labels) (bool, *types.Container, error) {
-	dockerCont, err := d.dockerClient.ContainerInspect(dockerID)
+	dockerCont, err := d.dockerClient.ContainerInspect(ctx.Background(), dockerID)
 	if err != nil {
 		return false, nil, fmt.Errorf("Error while inspecting container '%s': %s", dockerID, err)
 	}

@@ -25,7 +25,7 @@ SERVER_LABEL="io.cilium.server"
 CLIENT_LABEL="io.cilium.client"
 
 docker network inspect $TEST_NET || {
-	docker network create --ipam-driver cilium --driver cilium $TEST_NET
+	docker network create --ipv6 --subnet ::1/112 --ipam-driver cilium --driver cilium $TEST_NET
 }
 
 docker run -dt --net=$TEST_NET --name server -l $SERVER_LABEL $NETPERF_IMAGE
@@ -51,14 +51,14 @@ cat <<EOF | cilium -D policy import -
 {
         "name": "io.cilium",
         "children": {
-		"client": { },
-		"server": {
-			"rules": [{
-				"allow": ["reserved:host", "../client"]
-			}]
-		}
+            "client": { },
+            "server": {
+                "rules": [{
+                    "allow": ["reserved:host", "../client"]
+                }]
+            }
 
-	}
+	    }
 }
 EOF
 

@@ -14,6 +14,7 @@ end
 $bootstrap = <<SCRIPT
 chown -R vagrant:vagrant /home/vagrant/go
 sudo apt-get -y install socat curl jq realpath pv tmux
+echo 'cd ~/go/src/github.com/cilium/cilium' >> /home/vagrant/.bashrc
 SCRIPT
 
 $build = <<SCRIPT
@@ -28,6 +29,7 @@ sudo cp /home/vagrant/go/src/github.com/cilium/cilium/contrib/upstart/cilium-net
 sudo cp /home/vagrant/go/src/github.com/cilium/cilium/contrib/upstart/cilium-socket-proxy.conf /etc/init/
 sudo cp /home/vagrant/go/src/github.com/cilium/cilium/contrib/upstart/cilium-consul.conf /etc/init/
 sudo cp /home/vagrant/go/src/github.com/cilium/cilium/contrib/upstart/cilium-policy-watcher.conf /etc/init/
+sudo cp /home/vagrant/go/src/github.com/cilium/cilium/contrib/upstart/cilium-etcd.conf /etc/init/
 sudo rm -rf /var/log/upstart/cilium-*
 
 sudo usermod -a -G cilium vagrant
@@ -49,10 +51,12 @@ echo 'export PATH=$PATH:/home/vagrant/etcd-v2.2.4-linux-amd64' >> $HOME/.profile
 sudo chmod -R 775  /usr/local/go/pkg/
 sudo chgrp vagrant /usr/local/go/pkg/
 
-git clone -b v1.3.7 https://github.com/kubernetes/kubernetes.git
+git clone -b v1.4.0 https://github.com/kubernetes/kubernetes.git
 sudo chown -R vagrant.vagrant kubernetes
 cd kubernetes
-patch -p1 < /home/vagrant/go/src/github.com/cilium/cilium/examples/kubernetes/kubernetes-v1.3.7.patch
+patch -p1 < /home/vagrant/go/src/github.com/cilium/cilium/examples/kubernetes/kubernetes-v1.4.0.patch
+
+go get -u github.com/jteeuwen/go-bindata/go-bindata
 
 # Install loopback cni plugin
 sudo mkdir -p /opt/cni/bin
@@ -107,15 +111,15 @@ Vagrant.configure(2) do |config|
 
     config.vm.provider :libvirt do |libvirt|
         config.vm.box = "noironetworks/net-next"
-        libvirt.memory = 4096
-        libvirt.cpus = 8
+        libvirt.memory = ENV['VM_MEMORY']
+        libvirt.cpus = ENV['VM_CPUS']
         config.vm.synced_folder ".", "/home/vagrant/go/src/github.com/cilium/cilium", disabled: false
     end
 
     config.vm.provider "virtualbox" do |vb|
         config.vm.box = "noironetworks/net-next"
-        vb.memory = "4096"
-        vb.cpus = 8
+        vb.memory = ENV['VM_MEMORY']
+        vb.cpus = ENV['VM_CPUS']
 
         if ENV["NFS"] then
             config.vm.synced_folder '.', '/home/vagrant/go/src/github.com/cilium/cilium', type: "nfs"

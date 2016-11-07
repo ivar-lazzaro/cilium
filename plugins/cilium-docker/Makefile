@@ -7,7 +7,7 @@ all: $(TARGET)
 SOURCES := $(shell find . -name '*.go')
 
 $(TARGET): $(SOURCES)
-	go build -o $(TARGET)
+	go build -ldflags "-X "github.com/cilium/cilium/common".Version=$(VERSION)" -o $(TARGET)
 
 run:
 	./cilium-docker -d
@@ -18,4 +18,3 @@ clean:
 
 install: all
 	$(INSTALL) -m 0755 $(TARGET) $(DESTDIR)$(BINDIR)
-	cp $(TARGET) ${GOPATH}/bin

@@ -16,6 +16,7 @@
 package daemon
 
 import (
+	"fmt"
 	"net"
 	"sync"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/cilium/cilium/common/addressing"
 	"github.com/cilium/cilium/common/types"
 
+	etcdAPI "github.com/coreos/etcd/clientv3"
 	consulAPI "github.com/hashicorp/consul/api"
 )
 
@@ -38,6 +40,7 @@ var (
 	DaemonOptionLibrary = types.OptionLibrary{
 		OptionPolicyTracing: &OptionSpecPolicyTracing,
 	}
+	kvBackend = ""
 )
 
 func init() {
@@ -55,9 +58,12 @@ type Config struct {
 	NAT46Prefix          *net.IPNet              // NAT46 IPv6 Prefix
 	Device               string                  // Receive device
 	ConsulConfig         *consulAPI.Config       // Consul configuration
+	EtcdConfig           *etcdAPI.Config         // Etcd Configuration
+	EtcdCfgPath          string                  // Etcd Configuration path
 	DockerEndpoint       string                  // Docker endpoint
 	IPv4Enabled          bool                    // Gives IPv4 addresses to containers
 	K8sEndpoint          string                  // Kubernetes endpoint
+	K8sCfgPath           string                  // Kubeconfig path
 	ValidLabelPrefixes   *types.LabelPrefixCfg   // Label prefixes used to filter from all labels
 	ValidLabelPrefixesMU sync.RWMutex
 	UIServerAddr         string // TCP address for UI server
@@ -85,5 +91,22 @@ func (c *Config) IsUIEnabled() bool {
 }
 
 func (c *Config) IsK8sEnabled() bool {
-	return len(c.K8sEndpoint) != 0
+	return c.K8sEndpoint != "" || c.K8sCfgPath != ""
+}
+
+// SetKVBackend is only used for test purposes
+func (c *Config) SetKVBackend() error {
+	switch kvBackend {
+	case "consul":
+		consulConfig := consulAPI.DefaultConfig()
+		consulConfig.Address = "127.0.0.1:8501"
+		c.ConsulConfig = consulConfig
+		return nil
+	case "etcd":
+		c.EtcdConfig = &etcdAPI.Config{}
+		c.EtcdConfig.Endpoints = []string{"http://127.0.0.1:4002"}
+		return nil
+	default:
+		return fmt.Errorf("invalid backend %s", kvBackend)
+	}
 }
